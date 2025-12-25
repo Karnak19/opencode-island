@@ -406,7 +406,7 @@ class IslandState: ObservableObject {
         var latestMessage: String?
         
         enum Status: String {
-            case idle = "Idle"
+            case idle = "Ready"
             case processing = "Processing"
             case waiting = "Waiting"
         }
@@ -667,7 +667,7 @@ struct IslandView: View {
                 } else {
                     Text(session.status.rawValue)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(session.status == .processing ? accentColor : .white.opacity(0.4))
+                        .foregroundColor(session.status == .processing ? accentColor : (session.status == .idle ? .green : .white.opacity(0.4)))
                 }
             }
             
@@ -697,7 +697,7 @@ struct IslandView: View {
     
     private func statusColor(for status: IslandState.Session.Status) -> Color {
         switch status {
-        case .idle: return .white.opacity(0.3)
+        case .idle: return .green
         case .processing: return accentColor
         case .waiting: return .yellow
         }

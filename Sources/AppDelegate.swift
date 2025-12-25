@@ -12,10 +12,87 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBarIcon()
         setupIslandWindow()
         setupEventMonitors()
-        
-        // For testing: show pending state after 2 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.islandState.showPending = true
+        setupSocketServer()
+    }
+    
+    // MARK: - Socket Server
+    
+    private func setupSocketServer() {
+        SocketServer.shared.onEvent = { [weak self] event in
+            self?.handlePluginEvent(event)
+        }
+        SocketServer.shared.start()
+    }
+    
+    private func handlePluginEvent(_ event: PluginEvent) {
+        switch event.type {
+        case .sessionStart:
+            // Add new session
+            let session = IslandState.Session(
+                id: event.sessionId,
+                title: event.payload.cwd?.components(separatedBy: "/").last ?? "Session",
+                cwd: event.payload.cwd ?? "",
+                model: event.payload.model ?? "unknown",
+                status: .idle
+            )
+            islandState.sessions.append(session)
+            islandState.showPending = true
+            
+        case .sessionEnd:
+            // Remove session
+            islandState.sessions.removeAll { $0.id == event.sessionId }
+            if islandState.sessions.isEmpty {
+                islandState.showPending = false
+                islandState.isExpanded = false
+            }
+            
+        case .sessionUpdate:
+            // Update session status
+            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
+                if let status = event.payload.status {
+                    switch status {
+                    case "processing", "running_tool":
+                        islandState.sessions[index].status = .processing
+                    case "waiting_for_input":
+                        islandState.sessions[index].status = .waiting
+                    default:
+                        islandState.sessions[index].status = .idle
+                    }
+                }
+            }
+            
+        case .toolApprovalNeeded:
+            // Show approval request
+            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
+                islandState.sessions[index].status = .waiting
+                islandState.sessions[index].pendingTool = event.payload.tool
+                islandState.sessions[index].pendingToolId = event.payload.toolUseId
+            }
+            // Expand to show approval UI
+            islandState.showPending = true
+            islandState.isExpanded = true
+            
+        case .toolExecuted:
+            // Tool finished
+            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
+                islandState.sessions[index].status = .processing
+                islandState.sessions[index].pendingTool = nil
+                islandState.sessions[index].pendingToolId = nil
+            }
+            
+        case .event:
+            // Generic event - update status if provided
+            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }),
+               let status = event.payload.status {
+                switch status {
+                case "processing":
+                    islandState.sessions[index].status = .processing
+                case "idle":
+                    islandState.sessions[index].status = .idle
+                default:
+                    break
+                }
+            }
         }
     }
     
@@ -155,6 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         EventMonitors.shared.stop()
+        SocketServer.shared.stop()
     }
 }
 
@@ -277,14 +355,32 @@ class IslandState: ObservableObject {
     @Published var sessions: [Session] = []
     
     struct Session: Identifiable {
-        let id = UUID()
+        let id: String  // Session ID from OpenCode
         let title: String
+        let cwd: String
+        let model: String
         var status: Status
+        var pendingTool: String?
+        var pendingToolId: String?
         
         enum Status: String {
             case idle = "Idle"
             case processing = "Processing"
             case waiting = "Waiting"
+        }
+    }
+    
+    func approveToolUse(sessionId: String) {
+        if let session = sessions.first(where: { $0.id == sessionId }),
+           let toolId = session.pendingToolId {
+            SocketServer.shared.respondToApproval(toolUseId: toolId, allow: true)
+        }
+    }
+    
+    func denyToolUse(sessionId: String) {
+        if let session = sessions.first(where: { $0.id == sessionId }),
+           let toolId = session.pendingToolId {
+            SocketServer.shared.respondToApproval(toolUseId: toolId, allow: false)
         }
     }
 }

@@ -15,6 +15,9 @@ env:
   APP_NAME: "Opencode Island"
   EXECUTABLE_NAME: "OpencodeIsland"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-14

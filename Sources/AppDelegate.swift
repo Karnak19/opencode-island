@@ -1,16 +1,17 @@
 import AppKit
 import SwiftUI
+import Combine
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
-    private var islandWindow: NSPanel?
+    private var islandWindow: NotchPanel?
     private var islandState = IslandState()
-    private var clickMonitor: Any?
+    private var cancellables = Set<AnyCancellable>()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBarIcon()
         setupIslandWindow()
-        setupClickOutsideMonitor()
+        setupEventMonitors()
         
         // For testing: show pending state after 2 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -18,36 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    // MARK: - Click Outside to Close
-    
-    private func setupClickOutsideMonitor() {
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self = self, self.islandState.isExpanded else { return }
-            
-            // Check if click is outside the island window
-            if let window = self.islandWindow {
-                let clickLocation = event.locationInWindow
-                let screenLocation = NSEvent.mouseLocation
-                let windowFrame = window.frame
-                
-                if !windowFrame.contains(screenLocation) {
-                    DispatchQueue.main.async {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            self.islandState.isExpanded = false
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    func applicationWillTerminate(_ notification: Notification) {
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
-    
-    // MARK: - Menu Bar Icon (for control/fallback)
+    // MARK: - Menu Bar Icon
     
     private func setupMenuBarIcon() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -71,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    // MARK: - Dynamic Island Window
+    // MARK: - Island Window
     
     private func setupIslandWindow() {
         guard let screen = NSScreen.main else { return }
@@ -85,29 +57,215 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let windowRect = NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight)
         
-        let panel = NSPanel(
+        let panel = NotchPanel(
             contentRect: windowRect,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         
-        panel.level = .mainMenu + 2
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = false
-        panel.ignoresMouseEvents = false
-        panel.acceptsMouseMovedEvents = true
-        
         let contentView = NSHostingView(rootView: IslandView(state: islandState))
         panel.contentView = contentView
-        
         panel.orderFrontRegardless()
         
         islandWindow = panel
+        
+        // Toggle ignoresMouseEvents based on expanded state
+        islandState.$isExpanded
+            .receive(on: DispatchQueue.main)
+            .sink { [weak panel] isExpanded in
+                // When expanded, accept mouse events (for buttons)
+                // When collapsed, ignore mouse events (clicks pass through)
+                panel?.ignoresMouseEvents = !isExpanded
+            }
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - Event Monitors
+    
+    private func setupEventMonitors() {
+        // Monitor mouse movement for hover detection
+        EventMonitors.shared.mouseLocation
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] location in
+                self?.handleMouseMove(at: location)
+            }
+            .store(in: &cancellables)
+        
+        // Monitor clicks for open/close
+        EventMonitors.shared.mouseDown
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handleMouseDown(event)
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func handleMouseMove(at point: CGPoint) {
+        // Could add hover effects here
+    }
+    
+    private func handleMouseDown(_ event: NSEvent) {
+        let point = NSEvent.mouseLocation
+        
+        if islandState.isExpanded {
+            // Check if click is outside the expanded panel
+            if !isPointInIsland(point) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    islandState.isExpanded = false
+                }
+            }
+        } else if islandState.showPending {
+            // Check if click is on the collapsed pill
+            if isPointInIsland(point) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    islandState.isExpanded = true
+                }
+            }
+        }
+    }
+    
+    private func isPointInIsland(_ point: CGPoint) -> Bool {
+        guard let screen = NSScreen.main else { return false }
+        
+        let screenFrame = screen.frame
+        let width: CGFloat
+        let height: CGFloat
+        
+        if islandState.isExpanded {
+            width = 440
+            height = 380
+        } else if islandState.showPending {
+            width = 310
+            height = 44
+        } else {
+            return false
+        }
+        
+        // Island is centered at top of screen
+        let islandRect = CGRect(
+            x: screenFrame.midX - width / 2,
+            y: screenFrame.maxY - height,
+            width: width,
+            height: height
+        )
+        
+        return islandRect.contains(point)
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        EventMonitors.shared.stop()
+    }
+}
+
+// MARK: - Notch Panel (Click-through window)
+
+class NotchPanel: NSPanel {
+    override init(
+        contentRect: NSRect,
+        styleMask style: NSWindow.StyleMask,
+        backing backingStoreType: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        
+        // Floating panel behavior
+        isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = true
+        
+        // Transparent
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        
+        // Window behavior
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        level = .mainMenu + 3
+        
+        // CRITICAL: Start with ignoring mouse events
+        // This allows clicks to pass through to menu bar and apps
+        ignoresMouseEvents = true
+        acceptsMouseMovedEvents = false
+    }
+    
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+// MARK: - Event Monitor
+
+class EventMonitor {
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
+    private let mask: NSEvent.EventTypeMask
+    private let handler: (NSEvent) -> Void
+    
+    init(mask: NSEvent.EventTypeMask, handler: @escaping (NSEvent) -> Void) {
+        self.mask = mask
+        self.handler = handler
+    }
+    
+    deinit {
+        stop()
+    }
+    
+    func start() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handler(event)
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handler(event)
+            return event
+        }
+    }
+    
+    func stop() {
+        if let monitor = globalMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMonitor = nil
+        }
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+    }
+}
+
+// MARK: - Event Monitors Singleton
+
+class EventMonitors {
+    static let shared = EventMonitors()
+    
+    let mouseLocation = CurrentValueSubject<CGPoint, Never>(.zero)
+    let mouseDown = PassthroughSubject<NSEvent, Never>()
+    
+    private var mouseMoveMonitor: EventMonitor?
+    private var mouseDownMonitor: EventMonitor?
+    
+    private init() {
+        setupMonitors()
+    }
+    
+    private func setupMonitors() {
+        mouseMoveMonitor = EventMonitor(mask: .mouseMoved) { [weak self] _ in
+            self?.mouseLocation.send(NSEvent.mouseLocation)
+        }
+        mouseMoveMonitor?.start()
+        
+        mouseDownMonitor = EventMonitor(mask: .leftMouseDown) { [weak self] event in
+            self?.mouseDown.send(event)
+        }
+        mouseDownMonitor?.start()
+    }
+    
+    func stop() {
+        mouseMoveMonitor?.stop()
+        mouseDownMonitor?.stop()
     }
 }
 
@@ -131,7 +289,7 @@ class IslandState: ObservableObject {
     }
 }
 
-// MARK: - Flat Top Shape (straight top, rounded bottom)
+// MARK: - Flat Top Shape
 
 struct FlatTopShape: Shape {
     var bottomRadius: CGFloat
@@ -148,34 +306,15 @@ struct FlatTopShape: Shape {
         let h = rect.height
         let br = min(bottomRadius, w / 2, h / 2)
         
-        // Start at top-left (flat, no radius)
         path.move(to: CGPoint(x: 0, y: 0))
-        
-        // Top edge (straight)
         path.addLine(to: CGPoint(x: w, y: 0))
-        
-        // Right edge down to bottom-right corner
         path.addLine(to: CGPoint(x: w, y: h - br))
-        
-        // Bottom-right rounded corner
-        path.addQuadCurve(
-            to: CGPoint(x: w - br, y: h),
-            control: CGPoint(x: w, y: h)
-        )
-        
-        // Bottom edge
+        path.addQuadCurve(to: CGPoint(x: w - br, y: h), control: CGPoint(x: w, y: h))
         path.addLine(to: CGPoint(x: br, y: h))
-        
-        // Bottom-left rounded corner
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: h - br),
-            control: CGPoint(x: 0, y: h)
-        )
-        
-        // Left edge back to top
+        path.addQuadCurve(to: CGPoint(x: 0, y: h - br), control: CGPoint(x: 0, y: h))
         path.addLine(to: CGPoint(x: 0, y: 0))
-        
         path.closeSubpath()
+        
         return path
     }
 }
@@ -186,11 +325,9 @@ struct IslandView: View {
     @ObservedObject var state: IslandState
     @State private var isHovering: Bool = false
     
-    // Colors
     private let accentColor = Color(red: 0.85, green: 0.65, blue: 0.55)
     private let bgColor = Color.black
     
-    // Dimensions
     private let hiddenWidth: CGFloat = 180
     private let hiddenHeight: CGFloat = 32
     private let collapsedWidth: CGFloat = 310
@@ -218,7 +355,6 @@ struct IslandView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // Content based on state
                 if state.isExpanded {
                     expandedContent
                 } else if state.showPending {
@@ -232,22 +368,8 @@ struct IslandView: View {
                     .shadow(color: .black.opacity(state.showPending || state.isExpanded ? 0.5 : 0), radius: 20, y: 10)
             )
             .clipShape(FlatTopShape(bottomRadius: bottomCornerRadius))
-            .onTapGesture {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    if state.isExpanded {
-                        state.isExpanded = false
-                    } else if state.showPending {
-                        state.isExpanded = true
-                    }
-                }
-            }
-            .onHover { hovering in
-                isHovering = hovering
-            }
-            .scaleEffect(isHovering && state.showPending && !state.isExpanded ? 1.02 : 1.0)
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.isExpanded)
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.showPending)
-            .animation(.easeOut(duration: 0.15), value: isHovering)
             
             Spacer()
         }

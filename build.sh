@@ -45,6 +45,14 @@ cp "${BUILD_PATH}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
 # Copy Info.plist
 cp "Sources/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
 
+# Copy plugin file to Resources (for auto-installation)
+if [ -f "plugin/opencode-island.ts" ]; then
+    cp "plugin/opencode-island.ts" "${RESOURCES_DIR}/opencode-island.ts"
+    echo -e "${GREEN}Plugin bundled in app resources${NC}"
+else
+    echo -e "${YELLOW}Warning: plugin/opencode-island.ts not found${NC}"
+fi
+
 # Create PkgInfo
 echo -n "APPL????" > "${CONTENTS_DIR}/PkgInfo"
 

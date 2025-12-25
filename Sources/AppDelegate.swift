@@ -8,6 +8,7 @@ private let logger = Logger(subsystem: "com.opencodeisland", category: "AppDeleg
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var islandWindow: NotchPanel?
+    private var setupWindow: NSWindow?
     private var islandState = IslandState()
     private var cancellables = Set<AnyCancellable>()
     
@@ -16,6 +17,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupIslandWindow()
         setupEventMonitors()
         setupSocketServer()
+        installPluginIfNeeded()
+    }
+    
+    // MARK: - Plugin Installation
+    
+    private func installPluginIfNeeded() {
+        logger.info("Checking plugin installation...")
+        
+        let status = PluginInstaller.installPlugin()
+        
+        // Update the island state with plugin status
+        DispatchQueue.main.async { [weak self] in
+            self?.updatePluginStatus(from: status)
+            
+            // Show setup alert if there was an issue
+            if !status.isSuccess {
+                self?.showSetupAlert()
+            }
+        }
+    }
+    
+    private func updatePluginStatus(from status: PluginInstaller.InstallationStatus) {
+        switch status.result {
+        case .success:
+            logger.info("Plugin installed successfully")
+            islandState.pluginStatus = .installed
+        case .alreadyInstalled:
+            logger.info("Plugin already installed")
+            islandState.pluginStatus = .installed
+        case .opencodeNotInstalled:
+            logger.warning("OpenCode not installed")
+            islandState.pluginStatus = .opencodeNotFound
+        case .copyFailed(let error):
+            logger.error("Plugin installation failed: \(error.localizedDescription)")
+            islandState.pluginStatus = .installFailed(error.localizedDescription)
+        case .pluginResourceMissing:
+            logger.error("Plugin resource missing from bundle")
+            islandState.pluginStatus = .installFailed("Plugin resource missing from app bundle")
+        }
+    }
+    
+    private func showSetupAlert() {
+        islandState.showSetupAlert = true
+        
+        let alertView = SetupAlertView(state: islandState)
+        let hostingView = NSHostingView(rootView: alertView)
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Opencode Island Setup"
+        window.contentView = hostingView
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        
+        setupWindow = window
+        
+        // Close window when showSetupAlert becomes false
+        islandState.$showSetupAlert
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] show in
+                if !show {
+                    self?.setupWindow?.close()
+                    self?.setupWindow = nil
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Socket Server

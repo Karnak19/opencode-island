@@ -461,6 +461,25 @@ struct PulseAnimation: ViewModifier {
     }
 }
 
+// MARK: - Spinner View
+
+struct SpinnerView: View {
+    @State private var isAnimating = false
+    
+    var body: some View {
+        Image(systemName: "arrow.trianglehead.2.clockwise")
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(Color(red: 0.85, green: 0.65, blue: 0.55))
+            .rotationEffect(.degrees(isAnimating ? 360 : 0))
+            .animation(
+                Animation.linear(duration: 1.0)
+                    .repeatForever(autoreverses: false),
+                value: isAnimating
+            )
+            .onAppear { isAnimating = true }
+    }
+}
+
 // MARK: - Island View
 
 struct IslandView: View {
@@ -524,6 +543,10 @@ struct IslandView: View {
         state.sessions.first { $0.status == .waiting }
     }
     
+    private var processingSession: IslandState.Session? {
+        state.sessions.first { $0.status == .processing }
+    }
+    
     private var collapsedPill: some View {
         HStack(spacing: 0) {
             Image(systemName: "apple.terminal.fill")
@@ -538,10 +561,13 @@ struct IslandView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.yellow)
                     .frame(width: 50, height: collapsedHeight)
+            } else if processingSession != nil {
+                SpinnerView()
+                    .frame(width: 50, height: collapsedHeight)
             } else {
-                Image(systemName: "sparkle")
+                Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(accentColor)
+                    .foregroundColor(.green)
                     .frame(width: 50, height: collapsedHeight)
             }
         }

@@ -25,13 +25,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func handlePluginEvent(_ event: PluginEvent) {
+        print("[Island] Received event: \(event.type.rawValue) for session \(event.sessionId)")
+        print("[Island] Current sessions: \(islandState.sessions.map { "\($0.id.prefix(8)):\($0.title)" })")
         switch event.type {
         case .sessionStart:
             // Check if session already exists (update it) or add new
             if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
-                // Update existing session
+                print("[Island] Updating existing session at index \(index)")
+                // Update existing session - also update title if provided
                 islandState.sessions[index].status = .idle
+                if let title = event.payload.title {
+                    islandState.sessions[index].title = title
+                }
             } else {
+                print("[Island] Adding new session with id \(event.sessionId)")
                 // Add new session
                 let title = event.payload.title ?? event.payload.cwd?.components(separatedBy: "/").last ?? "Session"
                 let session = IslandState.Session(
@@ -57,23 +64,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     switch status {
                     case "processing", "running_tool":
                         islandState.sessions[index].status = .processing
-                    case "waiting_for_input":
+                        islandState.sessions[index].permissionType = nil
+                    case "waiting_for_input", "waiting_for_approval":
                         islandState.sessions[index].status = .waiting
+                        islandState.sessions[index].pendingTool = event.payload.tool
+                        islandState.sessions[index].permissionType = event.payload.permissionType
                     default:
                         islandState.sessions[index].status = .idle
+                        islandState.sessions[index].permissionType = nil
                     }
                 }
+                if let message = event.payload.message {
+                    islandState.sessions[index].latestMessage = message
+                }
             }
-            
-        case .toolApprovalNeeded:
-            // Show approval request
-            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
-                islandState.sessions[index].status = .waiting
-                islandState.sessions[index].pendingTool = event.payload.tool
-                islandState.sessions[index].pendingToolId = event.payload.toolUseId
-            }
-            // Expand to show approval UI (this is important - user needs to see it)
-            islandState.isExpanded = true
             
         case .toolExecuted:
             // Tool finished
@@ -81,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 islandState.sessions[index].status = .processing
                 islandState.sessions[index].pendingTool = nil
                 islandState.sessions[index].pendingToolId = nil
+                islandState.sessions[index].permissionType = nil
             }
             
         case .event:
@@ -391,31 +396,19 @@ class IslandState: ObservableObject {
     
     struct Session: Identifiable {
         let id: String  // Session ID from OpenCode
-        let title: String
+        var title: String
         let cwd: String
         let model: String
         var status: Status
         var pendingTool: String?
         var pendingToolId: String?
+        var permissionType: String?
+        var latestMessage: String?
         
         enum Status: String {
             case idle = "Idle"
             case processing = "Processing"
             case waiting = "Waiting"
-        }
-    }
-    
-    func approveToolUse(sessionId: String) {
-        if let session = sessions.first(where: { $0.id == sessionId }),
-           let toolId = session.pendingToolId {
-            SocketServer.shared.respondToApproval(toolUseId: toolId, allow: true)
-        }
-    }
-    
-    func denyToolUse(sessionId: String) {
-        if let session = sessions.first(where: { $0.id == sessionId }),
-           let toolId = session.pendingToolId {
-            SocketServer.shared.respondToApproval(toolUseId: toolId, allow: false)
         }
     }
 }
@@ -447,6 +440,24 @@ struct FlatTopShape: Shape {
         path.closeSubpath()
         
         return path
+    }
+}
+
+// MARK: - Pulse Animation
+
+struct PulseAnimation: ViewModifier {
+    @State private var isPulsing = false
+    
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPulsing ? 1.5 : 1.0)
+            .opacity(isPulsing ? 0 : 1)
+            .animation(
+                Animation.easeInOut(duration: 1.0)
+                    .repeatForever(autoreverses: false),
+                value: isPulsing
+            )
+            .onAppear { isPulsing = true }
     }
 }
 
@@ -509,6 +520,10 @@ struct IslandView: View {
     
     // MARK: - Collapsed Pill
     
+    private var waitingSession: IslandState.Session? {
+        state.sessions.first { $0.status == .waiting }
+    }
+    
     private var collapsedPill: some View {
         HStack(spacing: 0) {
             Image(systemName: "apple.terminal.fill")
@@ -518,10 +533,17 @@ struct IslandView: View {
             
             Spacer()
             
-            Image(systemName: "sparkle")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(accentColor)
-                .frame(width: 50, height: collapsedHeight)
+            if let waiting = waitingSession {
+                Image(systemName: permissionIcon(for: waiting.permissionType))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.yellow)
+                    .frame(width: 50, height: collapsedHeight)
+            } else {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(accentColor)
+                    .frame(width: 50, height: collapsedHeight)
+            }
         }
         .padding(.horizontal, 4)
     }
@@ -579,7 +601,7 @@ struct IslandView: View {
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundColor(.white.opacity(0.4))
             
-            Text("Start an OpenCode session\nto see it here")
+            Text("Start an OpenCode session\nto monitor activity here")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.white.opacity(0.25))
                 .multilineTextAlignment(.center)
@@ -602,32 +624,74 @@ struct IslandView: View {
     }
     
     private func sessionRow(_ session: IslandState.Session) -> some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(statusColor(for: session.status))
-                .frame(width: 8, height: 8)
+        let isWaiting = session.status == .waiting
+        
+        return HStack(spacing: 12) {
+            // Pulsing indicator for waiting state
+            ZStack {
+                if isWaiting {
+                    Circle()
+                        .fill(Color.yellow.opacity(0.3))
+                        .frame(width: 16, height: 16)
+                        .modifier(PulseAnimation())
+                }
+                Circle()
+                    .fill(statusColor(for: session.status))
+                    .frame(width: 8, height: 8)
+            }
+            .frame(width: 16, height: 16)
             
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(session.title)
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundColor(.white)
                 
-                Text(session.status.rawValue)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(session.status == .processing ? accentColor : .white.opacity(0.4))
+                if isWaiting {
+                    // Prominent waiting message with contextual icon
+                    HStack(spacing: 6) {
+                        Image(systemName: permissionIcon(for: session.permissionType))
+                            .font(.system(size: 10))
+                            .foregroundColor(.yellow)
+                        
+                        Text(permissionLabel(for: session.permissionType))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(.yellow)
+                        
+                        if let tool = session.pendingTool, tool != session.permissionType {
+                            Text("(\(tool))")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.yellow.opacity(0.7))
+                                .lineLimit(1)
+                        }
+                    }
+                } else {
+                    Text(session.status.rawValue)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(session.status == .processing ? accentColor : .white.opacity(0.4))
+                }
             }
             
             Spacer()
             
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.white.opacity(0.3))
+            if isWaiting {
+                Image(systemName: permissionIcon(for: session.permissionType))
+                    .font(.system(size: 16))
+                    .foregroundColor(.yellow.opacity(0.8))
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.3))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.05))
+                .fill(isWaiting ? Color.yellow.opacity(0.1) : Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(isWaiting ? Color.yellow.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
         )
     }
     
@@ -636,6 +700,44 @@ struct IslandView: View {
         case .idle: return .white.opacity(0.3)
         case .processing: return accentColor
         case .waiting: return .yellow
+        }
+    }
+    
+    private func permissionIcon(for permissionType: String?) -> String {
+        switch permissionType {
+        case "external_directory":
+            return "folder.badge.questionmark"
+        case "write", "file_write":
+            return "doc.badge.ellipsis"
+        case "execute", "bash", "shell":
+            return "terminal"
+        case "read", "file_read":
+            return "doc.text.magnifyingglass"
+        case "network", "http":
+            return "network"
+        case "delete", "remove":
+            return "trash"
+        default:
+            return "questionmark.circle"
+        }
+    }
+    
+    private func permissionLabel(for permissionType: String?) -> String {
+        switch permissionType {
+        case "external_directory":
+            return "External path access"
+        case "write", "file_write":
+            return "File write"
+        case "execute", "bash", "shell":
+            return "Execute command"
+        case "read", "file_read":
+            return "File read"
+        case "network", "http":
+            return "Network access"
+        case "delete", "remove":
+            return "Delete file"
+        default:
+            return "Approval needed"
         }
     }
     
@@ -649,6 +751,10 @@ struct IslandView: View {
             .buttonStyle(.plain)
             
             Spacer()
+            
+            Text("Approve actions in terminal")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.3))
             
             Button(action: { NSApplication.shared.terminate(nil) }) {
                 Text("Quit")

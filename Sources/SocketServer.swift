@@ -24,7 +24,6 @@ enum EventType: String, Codable {
     case sessionStart = "session_start"
     case sessionEnd = "session_end"
     case sessionUpdate = "session_update"
-    case toolApprovalNeeded = "tool_approval_needed"
     case toolExecuted = "tool_executed"
     case event = "event"
 }
@@ -44,17 +43,15 @@ struct EventPayload: Codable {
     let status: String?
     let message: String?
     
+    // Permission info
+    let permissionType: String?
+    
     enum CodingKeys: String, CodingKey {
         case cwd, title, model, tool, status, message
         case toolInput = "tool_input"
         case toolUseId = "tool_use_id"
+        case permissionType = "permission_type"
     }
-}
-
-/// Response to send back (for tool approvals)
-struct PluginResponse: Codable {
-    let decision: String  // "allow" or "deny"
-    let reason: String?
 }
 
 // MARK: - Socket Server
@@ -69,10 +66,6 @@ class SocketServer {
     private let queue = DispatchQueue(label: "com.opencodeisland.socket", qos: .userInitiated)
     
     var onEvent: ((PluginEvent) -> Void)?
-    
-    // Pending approvals (toolUseId -> client socket)
-    private var pendingApprovals: [String: Int32] = [:]
-    private let approvalsLock = NSLock()
     
     private init() {}
     
@@ -94,14 +87,6 @@ class SocketServer {
         }
         
         unlink(Self.socketPath)
-        
-        // Close pending approval sockets
-        approvalsLock.lock()
-        for (_, socket) in pendingApprovals {
-            close(socket)
-        }
-        pendingApprovals.removeAll()
-        approvalsLock.unlock()
         
         logger.info("Socket server stopped")
     }
@@ -234,57 +219,12 @@ class SocketServer {
         
         logger.info("Received event: \(event.type.rawValue) for session \(event.sessionId.prefix(8))")
         
-        // Handle tool approval requests specially - keep socket open for response
-        if event.type == .toolApprovalNeeded, let toolUseId = event.payload.toolUseId {
-            approvalsLock.lock()
-            pendingApprovals[toolUseId] = clientSocket
-            approvalsLock.unlock()
-            logger.debug("Waiting for approval decision for tool: \(toolUseId.prefix(12))")
-        } else {
-            close(clientSocket)
-        }
+        close(clientSocket)
         
         // Notify handler on main thread
         DispatchQueue.main.async { [weak self] in
             self?.onEvent?(event)
         }
-    }
-    
-    // MARK: - Tool Approval Response
-    
-    func respondToApproval(toolUseId: String, allow: Bool, reason: String? = nil) {
-        queue.async { [weak self] in
-            self?.sendApprovalResponse(toolUseId: toolUseId, allow: allow, reason: reason)
-        }
-    }
-    
-    private func sendApprovalResponse(toolUseId: String, allow: Bool, reason: String?) {
-        approvalsLock.lock()
-        guard let clientSocket = pendingApprovals.removeValue(forKey: toolUseId) else {
-            approvalsLock.unlock()
-            logger.warning("No pending approval for: \(toolUseId.prefix(12))")
-            return
-        }
-        approvalsLock.unlock()
-        
-        let response = PluginResponse(decision: allow ? "allow" : "deny", reason: reason)
-        
-        guard let data = try? JSONEncoder().encode(response) else {
-            close(clientSocket)
-            return
-        }
-        
-        data.withUnsafeBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else { return }
-            let result = write(clientSocket, baseAddress, data.count)
-            if result < 0 {
-                logger.error("Failed to send response: \(errno)")
-            } else {
-                logger.info("Sent \(allow ? "allow" : "deny") response for: \(toolUseId.prefix(12))")
-            }
-        }
-        
-        close(clientSocket)
     }
 }
 

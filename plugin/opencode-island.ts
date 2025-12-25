@@ -57,19 +57,34 @@ export const OpencodeIslandPlugin: Plugin = async ({ directory }) => {
   return {
     // Generic event handler for all events
     event: async ({ event }) => {
-      // Session created
-      if (event.type === "session.created") {
-        const data = event.properties as { sessionId?: string }
-        if (data.sessionId) {
-          currentSessionId = data.sessionId
-          await sendEvent({
-            type: "session_start",
-            session_id: data.sessionId,
-            payload: {
-              cwd: currentCwd,
-              model: "unknown", // Will be updated later
-            },
-          })
+      // Session created or updated - extract session info
+      if (event.type === "session.created" || event.type === "session.updated") {
+        const data = event.properties as { info?: { id?: string; title?: string } }
+        if (data.info?.id) {
+          const isNew = currentSessionId !== data.info.id
+          currentSessionId = data.info.id
+          
+          // Only send session_start for new sessions
+          if (isNew) {
+            await sendEvent({
+              type: "session_start",
+              session_id: data.info.id,
+              payload: {
+                cwd: currentCwd,
+                title: data.info.title || currentCwd?.split("/").pop(),
+                model: "unknown",
+              },
+            })
+          } else if (event.type === "session.updated" && data.info.title) {
+            // Send session_update for title changes on existing sessions
+            await sendEvent({
+              type: "session_update",
+              session_id: data.info.id,
+              payload: {
+                title: data.info.title,
+              },
+            })
+          }
         }
       }
       
@@ -86,14 +101,17 @@ export const OpencodeIslandPlugin: Plugin = async ({ directory }) => {
       
       // Session status update
       if (event.type === "session.status" && currentSessionId) {
-        const data = event.properties as { status?: string }
-        await sendEvent({
-          type: "session_update",
-          session_id: currentSessionId,
-          payload: {
-            status: data.status || "unknown",
-          },
-        })
+        const data = event.properties as { status?: { type?: string } | string }
+        const status = typeof data.status === "object" ? data.status?.type : data.status
+        if (status) {
+          await sendEvent({
+            type: "session_update",
+            session_id: currentSessionId,
+            payload: {
+              status: status === "busy" ? "processing" : status,
+            },
+          })
+        }
       }
       
       // Session deleted/ended
@@ -106,25 +124,37 @@ export const OpencodeIslandPlugin: Plugin = async ({ directory }) => {
         currentSessionId = null
       }
       
-      // Permission request (tool approval needed)
+      // Permission request - this is the actual "waiting for approval" event
       if (event.type === "permission.updated" && currentSessionId) {
         const data = event.properties as {
-          tool?: string
-          toolInput?: Record<string, unknown>
-          toolUseId?: string
+          id?: string
+          type?: string
+          title?: string
+          metadata?: { command?: string; tool?: string }
+          callID?: string
         }
-        if (data.tool) {
-          await sendEvent({
-            type: "tool_approval_needed",
-            session_id: currentSessionId,
-            payload: {
-              tool: data.tool,
-              tool_input: data.toolInput,
-              tool_use_id: data.toolUseId,
-              status: "waiting_for_approval",
-            },
-          })
-        }
+        // permission.updated means user needs to approve something
+        await sendEvent({
+          type: "session_update",
+          session_id: currentSessionId,
+          payload: {
+            status: "waiting_for_approval",
+            tool: data.metadata?.tool || data.type || "permission",
+            permission_type: data.type,
+            message: data.title,
+          },
+        })
+      }
+      
+      // Permission replied - user approved or denied
+      if (event.type === "permission.replied" && currentSessionId) {
+        await sendEvent({
+          type: "session_update",
+          session_id: currentSessionId,
+          payload: {
+            status: "processing",
+          },
+        })
       }
     },
     

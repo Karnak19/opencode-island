@@ -32,6 +32,7 @@ enum EventType: String, Codable {
 struct EventPayload: Codable {
     // Session info
     let cwd: String?
+    let title: String?
     let model: String?
     
     // Tool info
@@ -44,7 +45,7 @@ struct EventPayload: Codable {
     let message: String?
     
     enum CodingKeys: String, CodingKey {
-        case cwd, model, tool, status, message
+        case cwd, title, model, tool, status, message
         case toolInput = "tool_input"
         case toolUseId = "tool_use_id"
     }

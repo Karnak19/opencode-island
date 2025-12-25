@@ -27,24 +27,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func handlePluginEvent(_ event: PluginEvent) {
         switch event.type {
         case .sessionStart:
-            // Add new session
-            let session = IslandState.Session(
-                id: event.sessionId,
-                title: event.payload.cwd?.components(separatedBy: "/").last ?? "Session",
-                cwd: event.payload.cwd ?? "",
-                model: event.payload.model ?? "unknown",
-                status: .idle
-            )
-            islandState.sessions.append(session)
-            islandState.showPending = true
+            // Check if session already exists (update it) or add new
+            if let index = islandState.sessions.firstIndex(where: { $0.id == event.sessionId }) {
+                // Update existing session
+                islandState.sessions[index].status = .idle
+            } else {
+                // Add new session
+                let title = event.payload.title ?? event.payload.cwd?.components(separatedBy: "/").last ?? "Session"
+                let session = IslandState.Session(
+                    id: event.sessionId,
+                    title: title,
+                    cwd: event.payload.cwd ?? "",
+                    model: event.payload.model ?? "unknown",
+                    status: .idle
+                )
+                islandState.sessions.append(session)
+            }
+            // Don't auto-expand, just show pill if any session is active (not idle)
+            updateIslandVisibility()
             
         case .sessionEnd:
             // Remove session
             islandState.sessions.removeAll { $0.id == event.sessionId }
-            if islandState.sessions.isEmpty {
-                islandState.showPending = false
-                islandState.isExpanded = false
-            }
             
         case .sessionUpdate:
             // Update session status
@@ -68,8 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 islandState.sessions[index].pendingTool = event.payload.tool
                 islandState.sessions[index].pendingToolId = event.payload.toolUseId
             }
-            // Expand to show approval UI
-            islandState.showPending = true
+            // Expand to show approval UI (this is important - user needs to see it)
             islandState.isExpanded = true
             
         case .toolExecuted:
@@ -94,6 +97,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        
+        // Update visibility after any event
+        updateIslandVisibility()
+    }
+    
+    private func updateIslandVisibility() {
+        // Show pill only when there's active work (processing or waiting)
+        let hasActiveWork = islandState.sessions.contains { $0.status != .idle }
+        islandState.showPending = hasActiveWork
+        
+        // Auto-collapse only if no sessions at all
+        if islandState.sessions.isEmpty {
+            islandState.isExpanded = false
+        }
     }
     
     // MARK: - Menu Bar Icon
@@ -111,12 +128,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func menuBarClicked() {
-        if islandState.isExpanded {
-            islandState.isExpanded = false
-        } else if islandState.showPending {
-            islandState.isExpanded = true
-        } else {
-            islandState.showPending = true
+        // Toggle expanded state if there are sessions
+        if !islandState.sessions.isEmpty {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                islandState.isExpanded.toggle()
+            }
         }
     }
     
@@ -186,20 +202,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let point = NSEvent.mouseLocation
         
         if islandState.isExpanded {
-            // Check if click is outside the expanded panel
-            if !isPointInIsland(point) {
+            // If click is on notch area, toggle closed
+            // If click is outside the panel, also close
+            if isPointInNotchArea(point) || !isPointInIsland(point) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     islandState.isExpanded = false
                 }
             }
-        } else if islandState.showPending {
-            // Check if click is on the collapsed pill
-            if isPointInIsland(point) {
+        } else {
+            // Check if click is on the notch area (even when pill is hidden)
+            if isPointInNotchArea(point) && !islandState.sessions.isEmpty {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     islandState.isExpanded = true
                 }
             }
         }
+    }
+    
+    private func isPointInNotchArea(_ point: CGPoint) -> Bool {
+        guard let screen = NSScreen.main else { return false }
+        
+        let screenFrame = screen.frame
+        // Notch area: roughly 200pt wide, 32pt tall, centered at top
+        let notchWidth: CGFloat = 200
+        let notchHeight: CGFloat = 38
+        
+        let notchRect = CGRect(
+            x: screenFrame.midX - notchWidth / 2,
+            y: screenFrame.maxY - notchHeight,
+            width: notchWidth,
+            height: notchHeight
+        )
+        
+        return notchRect.contains(point)
     }
     
     private func isPointInIsland(_ point: CGPoint) -> Bool {

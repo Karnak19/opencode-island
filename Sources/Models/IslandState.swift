@@ -9,6 +9,9 @@ class IslandState: ObservableObject {
     @Published var sessions: [Session] = []
     @Published var pluginStatus: PluginStatus = .unknown
     @Published var showSetupAlert: Bool = false
+
+    /// Callback to open settings window
+    var onOpenSettings: (() -> Void)?
     
     /// Plugin installation status
     enum PluginStatus {

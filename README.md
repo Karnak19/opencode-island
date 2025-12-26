@@ -66,6 +66,20 @@ Just download, install, and run. The app automatically:
 - Installs the required plugin
 - Starts listening for sessions
 
+### ⚙️ oh-my-opencode Config Manager
+
+Visual editor for managing your `oh-my-opencode.json` configuration:
+
+- **Agents Panel**: Enable/disable agents, configure models (Claude Opus 4.5, GPT-5.2, Gemini 3 Pro), adjust temperature and top P
+- **Hooks Panel**: Toggle lifecycle hooks like `todo-continuation-enforcer`, `comment-checker`, `context-window-monitor`
+- **MCPs Panel**: Enable/disable Model Context Protocol servers (context7, websearch_exa, grep_app)
+- **Claude Code Compatibility**: Load configurations from `~/.claude` directory
+- **Advanced Panel**: Raw JSON editor with syntax validation for power users
+
+Access the config manager by clicking the gear icon in the expanded island view.
+
+Configuration is stored at `~/.config/opencode/oh-my-opencode.json` and is automatically created on first use.
+
 ## Installation
 
 ### Download
@@ -150,14 +164,17 @@ opencode-island/
 │   ├── AppDelegate.swift      # App lifecycle & setup
 │   ├── SocketServer.swift     # Unix socket for plugin communication
 │   ├── Models/
-│   │   └── IslandState.swift  # Observable state
+│   │   ├── IslandState.swift  # Observable state
+│   │   └── ConfigModel.swift  # oh-my-opencode.json models
 │   ├── Services/
-│   │   └── PluginInstaller.swift  # Auto-installation logic
+│   │   ├── PluginInstaller.swift  # Auto-installation logic
+│   │   └── ConfigManager.swift    # Config persistence
 │   ├── Views/
 │   │   ├── IslandView.swift       # Main island UI
 │   │   ├── CollapsedPillView.swift
 │   │   ├── ExpandedContentView.swift
-│   │   └── SessionRowView.swift
+│   │   ├── SessionRowView.swift
+│   │   └── SettingsView.swift     # Config manager UI
 │   └── Utilities/
 │       ├── Theme.swift        # Design system
 │       ├── NotchPanel.swift   # Custom window
@@ -165,7 +182,8 @@ opencode-island/
 ├── plugin/
 │   └── opencode-island.ts     # OpenCode plugin
 ├── Package.swift
-└── build.sh
+├── build.sh
+└── oh-my-opencode.example.json  # Example config file
 ```
 
 ### Architecture

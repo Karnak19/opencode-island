@@ -89,7 +89,9 @@ struct ExpandedContentView: View {
     
     private var footerBar: some View {
         HStack {
-            Button(action: {}) {
+            Button(action: {
+                state.onOpenSettings?()
+            }) {
                 Image(systemName: "gear")
                     .font(.system(size: 14))
                     .foregroundColor(.white.opacity(0.4))

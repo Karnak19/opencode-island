@@ -9,7 +9,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var islandWindow: NotchPanel?
     private var setupWindow: NSWindow?
+    private var settingsWindow: NSWindow?
     private var islandState = IslandState()
+    private var configManager = ConfigManager()
     private var cancellables = Set<AnyCancellable>()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,6 +20,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupEventMonitors()
         setupSocketServer()
         installPluginIfNeeded()
+
+        // Set up settings callback
+        islandState.onOpenSettings = { [weak self] in
+            self?.showSettingsWindow()
+        }
     }
     
     // MARK: - Plugin Installation
@@ -333,5 +340,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         EventMonitors.shared.stop()
         SocketServer.shared.stop()
+    }
+
+    // MARK: - Settings Window
+
+    func showSettingsWindow() {
+        // If window already exists, just bring it to front
+        if let window = settingsWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        // Create new settings window
+        let settingsView = SettingsView(configManager: configManager)
+        let hostingView = NSHostingView(rootView: settingsView)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "oh-my-opencode Configuration"
+        window.contentView = hostingView
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        settingsWindow = window
+
+        // Clean up window reference when closed
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.settingsWindow = nil
+        }
     }
 }

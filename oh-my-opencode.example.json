@@ -1,0 +1,111 @@
+{
+  "agents": {
+    "OmO": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "document-writer": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "explore": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "frontend-ui-ux-engineer": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "librarian": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "multimodal-looker": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "oracle": {
+      "enabled": true,
+      "model_override": null,
+      "temperature": null,
+      "top_p": null
+    }
+  },
+  "claude_code_compatibility": {
+    "load_agents": false,
+    "load_commands": false,
+    "load_hooks": false,
+    "load_mcp_from_claude": false,
+    "load_skills": false
+  },
+  "hooks": {
+    "auto-formatter": {
+      "enabled": false
+    },
+    "code-quality-checker": {
+      "enabled": false
+    },
+    "comment-checker": {
+      "enabled": false
+    },
+    "context-window-monitor": {
+      "enabled": false
+    },
+    "dependency-tracker": {
+      "enabled": false
+    },
+    "documentation-enforcer": {
+      "enabled": false
+    },
+    "error-handler": {
+      "enabled": false
+    },
+    "git-commit-validator": {
+      "enabled": false
+    },
+    "import-organizer": {
+      "enabled": false
+    },
+    "performance-monitor": {
+      "enabled": false
+    },
+    "security-scanner": {
+      "enabled": false
+    },
+    "session-recovery": {
+      "enabled": false
+    },
+    "state-saver": {
+      "enabled": false
+    },
+    "test-coverage-enforcer": {
+      "enabled": false
+    },
+    "todo-continuation-enforcer": {
+      "enabled": false
+    }
+  },
+  "mcps": {
+    "context7": {
+      "enabled": false
+    },
+    "grep_app": {
+      "enabled": false
+    },
+    "websearch_exa": {
+      "enabled": false
+    }
+  }
+}

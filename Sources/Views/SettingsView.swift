@@ -20,21 +20,26 @@ struct SettingsView: View {
             // Header
             headerView
 
-            // Tab Bar
-            tabBarView
+            if !configManager.configExists {
+                // Show config creation prompt
+                configNotExistsView
+            } else {
+                // Tab Bar
+                tabBarView
 
-            Divider()
+                Divider()
 
-            // Content Area
-            ScrollView {
-                contentView
-                    .padding()
+                // Content Area
+                ScrollView {
+                    contentView
+                        .padding()
+                }
+
+                Divider()
+
+                // Footer
+                footerView
             }
-
-            Divider()
-
-            // Footer
-            footerView
         }
         .frame(width: 700, height: 600)
         .background(Color(NSColor.windowBackgroundColor))
@@ -59,6 +64,64 @@ struct SettingsView: View {
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    // MARK: - Config Not Exists View
+    private var configNotExistsView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: "doc.badge.gearshape")
+                .font(.system(size: 64))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 8) {
+                Text("oh-my-opencode Not Configured")
+                    .font(.title2.bold())
+
+                Text("Configuration file not found")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("oh-my-opencode is an optional configuration layer for OpenCode.")
+                    .multilineTextAlignment(.center)
+
+                Text("Only create this configuration if you want to:")
+                    .fontWeight(.medium)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Customize agent behavior and models", systemImage: "person.3.fill")
+                    Label("Enable lifecycle hooks", systemImage: "link.circle.fill")
+                    Label("Configure MCP servers", systemImage: "server.rack")
+                    Label("Load Claude Code compatibility features", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .font(.callout)
+            }
+            .frame(maxWidth: 500)
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(8)
+
+            Button(action: {
+                configManager.createConfigFile()
+            }) {
+                Label("Create oh-my-opencode Configuration", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            Text("This will create: \(configManager.configPath)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Spacer()
+        }
+        .padding()
     }
 
     // MARK: - Tab Bar

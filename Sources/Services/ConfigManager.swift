@@ -2,6 +2,7 @@ import Foundation
 
 class ConfigManager: ObservableObject {
     @Published var config: OhMyOpencodeConfig
+    @Published var configExists: Bool = false
 
     private let configURL: URL
 
@@ -11,17 +12,14 @@ class ConfigManager: ObservableObject {
         let configDir = homeDir.appendingPathComponent(".config/opencode")
         self.configURL = configDir.appendingPathComponent("oh-my-opencode.json")
 
-        // Load existing config or create default
+        // Check if config exists and load it
         if let loadedConfig = ConfigManager.loadConfig(from: configURL) {
             self.config = loadedConfig
+            self.configExists = true
         } else {
+            // Don't create the file automatically - just load defaults in memory
             self.config = OhMyOpencodeConfig.defaultConfig()
-            // Create config directory if needed
-            try? FileManager.default.createDirectory(
-                at: configDir,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+            self.configExists = false
         }
     }
 
@@ -42,8 +40,28 @@ class ConfigManager: ObservableObject {
         }
     }
 
+    // MARK: - Create Configuration File
+    func createConfigFile() {
+        // Create config directory if needed
+        let configDir = configURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(
+            at: configDir,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        // Mark as existing before saving
+        configExists = true
+
+        // Save the config
+        saveConfig()
+    }
+
     // MARK: - Save Configuration
     func saveConfig() {
+        // Only save if config file has been created
+        guard configExists else { return }
+
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

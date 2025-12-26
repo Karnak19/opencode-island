@@ -66,7 +66,9 @@ Just download, install, and run. The app automatically:
 - Installs the required plugin
 - Starts listening for sessions
 
-### ⚙️ oh-my-opencode Config Manager
+### ⚙️ oh-my-opencode Config Manager _(Optional)_
+
+**Note:** This is an optional feature for users who want advanced OpenCode customization.
 
 Visual editor for managing your `oh-my-opencode.json` configuration:
 
@@ -76,9 +78,9 @@ Visual editor for managing your `oh-my-opencode.json` configuration:
 - **Claude Code Compatibility**: Load configurations from `~/.claude` directory
 - **Advanced Panel**: Raw JSON editor with syntax validation for power users
 
-Access the config manager by clicking the gear icon in the expanded island view.
+Access the config manager by clicking the gear icon in the expanded island view. If you don't have oh-my-opencode configured yet, you'll be prompted to create the configuration file.
 
-Configuration is stored at `~/.config/opencode/oh-my-opencode.json` and is automatically created on first use.
+Configuration is stored at `~/.config/opencode/oh-my-opencode.json` and is **only created when you explicitly opt-in**.
 
 ## Installation
 

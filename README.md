@@ -68,9 +68,9 @@ Just download, install, and run. The app automatically:
 
 ### ⚙️ oh-my-opencode Config Manager _(Optional)_
 
-**Note:** This is an optional feature for users who want advanced OpenCode customization.
+**Note:** This feature is only for users who have [oh-my-opencode](https://github.com/opencode/oh-my-opencode) installed.
 
-Visual editor for managing your `oh-my-opencode.json` configuration:
+If you have oh-my-opencode installed, Opencode Island provides a visual editor for managing your configuration:
 
 - **Agents Panel**: Enable/disable agents, configure models (Claude Opus 4.5, GPT-5.2, Gemini 3 Pro), adjust temperature and top P
 - **Hooks Panel**: Toggle lifecycle hooks like `todo-continuation-enforcer`, `comment-checker`, `context-window-monitor`
@@ -78,9 +78,9 @@ Visual editor for managing your `oh-my-opencode.json` configuration:
 - **Claude Code Compatibility**: Load configurations from `~/.claude` directory
 - **Advanced Panel**: Raw JSON editor with syntax validation for power users
 
-Access the config manager by clicking the gear icon in the expanded island view. If you don't have oh-my-opencode configured yet, you'll be prompted to create the configuration file.
+Access the config manager by clicking the gear icon in the expanded island view.
 
-Configuration is stored at `~/.config/opencode/oh-my-opencode.json` and is **only created when you explicitly opt-in**.
+**Don't have oh-my-opencode?** The app works perfectly fine without it! oh-my-opencode is a separate optional tool that provides advanced customization for OpenCode.
 
 ## Installation
 

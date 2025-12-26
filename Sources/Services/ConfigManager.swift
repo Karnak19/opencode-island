@@ -2,7 +2,7 @@ import Foundation
 
 class ConfigManager: ObservableObject {
     @Published var config: OhMyOpencodeConfig
-    @Published var configExists: Bool = false
+    @Published var isInstalled: Bool = false
 
     private let configURL: URL
 
@@ -15,11 +15,11 @@ class ConfigManager: ObservableObject {
         // Check if config exists and load it
         if let loadedConfig = ConfigManager.loadConfig(from: configURL) {
             self.config = loadedConfig
-            self.configExists = true
+            self.isInstalled = true
         } else {
-            // Don't create the file automatically - just load defaults in memory
+            // oh-my-opencode not installed - just load defaults in memory
             self.config = OhMyOpencodeConfig.defaultConfig()
-            self.configExists = false
+            self.isInstalled = false
         }
     }
 
@@ -40,27 +40,10 @@ class ConfigManager: ObservableObject {
         }
     }
 
-    // MARK: - Create Configuration File
-    func createConfigFile() {
-        // Create config directory if needed
-        let configDir = configURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: configDir,
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-
-        // Mark as existing before saving
-        configExists = true
-
-        // Save the config
-        saveConfig()
-    }
-
     // MARK: - Save Configuration
     func saveConfig() {
-        // Only save if config file has been created
-        guard configExists else { return }
+        // Only save if oh-my-opencode is installed
+        guard isInstalled else { return }
 
         do {
             let encoder = JSONEncoder()

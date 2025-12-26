@@ -20,9 +20,9 @@ struct SettingsView: View {
             // Header
             headerView
 
-            if !configManager.configExists {
-                // Show config creation prompt
-                configNotExistsView
+            if !configManager.isInstalled {
+                // Show not installed message
+                notInstalledView
             } else {
                 // Tab Bar
                 tabBarView
@@ -66,58 +66,67 @@ struct SettingsView: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
 
-    // MARK: - Config Not Exists View
-    private var configNotExistsView: some View {
+    // MARK: - Not Installed View
+    private var notInstalledView: some View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "doc.badge.gearshape")
+            Image(systemName: "shippingbox")
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
 
             VStack(spacing: 8) {
-                Text("oh-my-opencode Not Configured")
+                Text("oh-my-opencode Not Installed")
                     .font(.title2.bold())
 
-                Text("Configuration file not found")
+                Text("This configuration panel is for oh-my-opencode users")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("oh-my-opencode is an optional configuration layer for OpenCode.")
-                    .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What is oh-my-opencode?")
+                        .font(.headline)
 
-                Text("Only create this configuration if you want to:")
-                    .fontWeight(.medium)
+                    Text("oh-my-opencode is an optional enhancement layer for OpenCode that provides:")
+                        .foregroundColor(.secondary)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Customize agent behavior and models", systemImage: "person.3.fill")
-                    Label("Enable lifecycle hooks", systemImage: "link.circle.fill")
-                    Label("Configure MCP servers", systemImage: "server.rack")
-                    Label("Load Claude Code compatibility features", systemImage: "arrow.triangle.2.circlepath")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Customizable agent behavior and models", systemImage: "person.3.fill")
+                        Label("Lifecycle hooks for automation", systemImage: "link.circle.fill")
+                        Label("MCP server management", systemImage: "server.rack")
+                        Label("Claude Code compatibility features", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .font(.callout)
                 }
-                .font(.callout)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Installation")
+                        .font(.headline)
+
+                    Text("To use this configuration panel, first install oh-my-opencode from its repository or package manager.")
+                        .foregroundColor(.secondary)
+
+                    Text("Once installed, oh-my-opencode will create its configuration file at:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text(configManager.configPath)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .cornerRadius(4)
+                }
             }
             .frame(maxWidth: 500)
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(8)
-
-            Button(action: {
-                configManager.createConfigFile()
-            }) {
-                Label("Create oh-my-opencode Configuration", systemImage: "plus.circle.fill")
-                    .font(.headline)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            Text("This will create: \(configManager.configPath)")
-                .font(.caption)
-                .foregroundColor(.secondary)
 
             Spacer()
         }
